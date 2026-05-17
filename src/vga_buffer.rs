@@ -59,20 +59,39 @@ pub struct Writer {
 
 impl Writer {
     fn update_hardware_cursor(&mut self) {
+        use x86_64::instructions::port::Port;
         let pos = self.row_position * BUFFER_WIDTH + self.column_position;
         unsafe {
             // low byte
-            x86_64::instructions::port::Port::new(0x3D4).write(0x0F as u8);
-            x86_64::instructions::port::Port::new(0x3D5).write((pos & 0xFF) as u8);
+            Port::<u8>::new(0x3D4).write(0x0F as u8);
+            Port::<u8>::new(0x3D5).write((pos & 0xFF) as u8);
             // high byte
-            x86_64::instructions::port::Port::new(0x3D4).write(0x0E as u8);
-            x86_64::instructions::port::Port::new(0x3D5).write(((pos >> 8) & 0xFF) as u8);
+            Port::<u8>::new(0x3D4).write(0x0E as u8);
+            Port::<u8>::new(0x3D5).write(((pos >> 8) & 0xFF) as u8);
         }
     }
 
     pub fn write_byte(&mut self, byte: u8) {
         match byte {
             b'\n' => self.new_line(),
+            0x08 => {
+                // backspace
+                if self.column_position > 0 {
+                    self.column_position -= 1;
+                } else if self.row_position > 0 {
+                    self.row_position -= 1;
+                    self.column_position = BUFFER_WIDTH - 1;
+                } else {
+                    return;
+                }
+                let row = self.row_position;
+                let col = self.column_position;
+                self.buffer.chars[row][col].write(ScreenChar { 
+                    ascii_character: b' ',
+                    color_code: self.color_code 
+                });
+                self.update_hardware_cursor();
+            }
             byte => {
                 if self.column_position >= BUFFER_WIDTH {
                     self.new_line();
@@ -96,7 +115,7 @@ impl Writer {
         for byte in s.bytes() {
             match byte {
                 // printable ASCII byte or newline
-                0x20..=0x7E | b'\n' => self.write_byte(byte),
+                0x20..=0x7E | b'\n' | 0x08 => self.write_byte(byte),
                 // not part of printable ASCII range
                 _ => self.write_byte(0xFE),
             }
@@ -127,6 +146,15 @@ impl Writer {
         for col in 0..BUFFER_WIDTH {
             self.buffer.chars[row][col].write(blank);
         }
+        self.update_hardware_cursor();
+    }
+
+    fn clear_screen(&mut self) {
+        for row in 0..BUFFER_HEIGHT {
+            self.clear_row(row);
+        }
+        self.row_position = 0;
+        self.column_position = 0;
     }
 }
 
@@ -142,7 +170,7 @@ lazy_static! {
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
         row_position: 0,
         column_position: 0,
-        color_code: ColorCode::new(Color::Yellow, Color::Black),
+        color_code: ColorCode::new(Color::White, Color::Black),
         buffer: unsafe { &mut *(0xB8000 as *mut Buffer) }
     });
 }
@@ -159,6 +187,17 @@ macro_rules! println {
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 
+#[macro_export]
+macro_rules! clear {
+    () => ($crate::vga_buffer::_clear());
+}
+
+#[macro_export]
+macro_rules! setcolor {
+    ($fg:item => $bg:item) => ($crate::vga_buffer::_setcolor($fg, $bg))
+}
+
+#[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
     use x86_64::instructions::interrupts;
@@ -168,8 +207,23 @@ pub fn _print(args: fmt::Arguments) {
     });
 }
 
-// tests
+#[doc(hidden)]
+pub fn _clear() {
+    use x86_64::instructions::interrupts;
+    interrupts::without_interrupts(|| {
+        WRITER.lock().clear_screen();
+    });
+}
 
+#[doc(hidden)]
+pub fn _setcolor(foreground: Color, background: Color) {
+    use x86_64::instructions::interrupts;
+    interrupts::without_interrupts(|| {
+        WRITER.lock().color_code = ColorCode::new(foreground, background);
+    });
+}
+
+// tests
 #[test_case]
 fn test_println_simple() {
     println!("test_println_simple output");

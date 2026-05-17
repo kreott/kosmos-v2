@@ -20,11 +20,12 @@ pub mod interrupts;
 pub mod memory;
 pub mod serial;
 pub mod task;
-pub mod test;
 pub mod vga_buffer;
+pub mod filesystem;
 
 // misc
 pub fn init() {
+    println!("cursor init done, pos: row=0 col=0");
     gdt::init();
     interrupts::init_idt();
     unsafe { interrupts::PICS.lock().initialize() };
@@ -39,7 +40,7 @@ pub fn hlt_loop() -> ! {
 
 // macro module for easy imports
 pub mod macros {
-    pub use crate::{print, println, serial_print, serial_println};
+    pub use crate::{print, println, serial_print, serial_println, clear};
 }
 
 // test related stuff

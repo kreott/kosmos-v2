@@ -1,0 +1,60 @@
+#![no_std]
+#![no_main]
+#![feature(custom_test_frameworks)]
+#![test_runner(kosmos::test_runner)]
+#![reexport_test_harness_main = "test_main"]
+
+extern crate alloc;
+
+use alloc::vec;
+use alloc::string::ToString;
+use core::panic::PanicInfo;
+use kosmos::filesystem::memfs::MemFs;
+use bootloader::{BootInfo, entry_point};
+
+entry_point!(main);
+
+fn main(boot_info: &'static BootInfo) -> ! {
+    use kosmos::allocator;
+    use kosmos::memory::{self, BootInfoFrameAllocator};
+    use x86_64::VirtAddr;
+
+    kosmos::init();
+    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
+    let mut mapper = unsafe { memory::init(phys_mem_offset) };
+    let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
+    allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
+
+    test_main();
+    loop {}
+}
+
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    kosmos::test_panic_handler(info)
+}
+
+#[test_case]
+fn test_memfs_all() {
+    let mut fs = MemFs::new();
+    fs.mkdir("/hello").unwrap();
+    fs.create("/hello/world.txt").unwrap();
+    fs.write("/hello/world.txt", b"hello world").unwrap();
+    assert_eq!(Ok(vec!["world.txt".to_string()]), fs.readdir("/hello"));
+    assert_eq!(true, fs.exists("/hello/world.txt"));
+    assert_eq!(false, fs.is_dir("/hello/world.txt"));
+    fs.remove("/hello/world.txt").unwrap();
+    assert_eq!(false, fs.exists("/hello/world.txt"));
+    assert_eq!(true, fs.exists("/hello"));
+    assert_eq!(true, fs.is_dir("/hello"));
+}
+
+#[test_case]
+fn test_mkdir_read_write() {
+    let mut fs = MemFs::new();
+    fs.mkdir("/hello").unwrap();
+    fs.create("/hello/world.txt").unwrap();
+    fs.write("/hello/world.txt", b"hello world").unwrap();
+    let data = fs.read("/hello/world.txt").unwrap();
+    assert_eq!(data, b"hello world");
+}

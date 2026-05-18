@@ -9,10 +9,9 @@ extern crate alloc;
 use bootloader::{BootInfo, entry_point};
 use kosmos::task::shell::shell_task;
 use core::panic::PanicInfo;
-use kosmos::macros::*;
+use kosmos::{filesystem, macros::*};
 use kosmos::task::Task;
 use kosmos::{allocator, task::executor::Executor};
-
 
 entry_point!(kernel_main);
 
@@ -32,16 +31,20 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
 
+    filesystem::fat32::test_fat32();
+
+    #[cfg(test)]
+    {
+        test_main();
+        kosmos::exit_qemu(kosmos::QemuExitCode::Success);
+    }
+
     // async task executor
     let mut executor = Executor::new();
     executor.spawn(Task::new(shell_task()));
     executor.run();
 
-    // executor.run() never returns so the rest is a fallback just in case
-
-    #[cfg(test)]
-    test_main();
-
+    // executor.run() never returns so the loop is a fallback just in case
     kosmos::hlt_loop();
 }
 

@@ -3,7 +3,8 @@
 #![feature(abi_x86_interrupt)]
 
 use core::panic::PanicInfo;
-use kosmos::{QemuExitCode, exit_qemu, serial_print, serial_println};
+use kosmos::macros::*;
+use kosmos::{QemuExitCode, exit_qemu};
 use lazy_static::lazy_static;
 use x86_64::structures::idt::InterruptDescriptorTable;
 use x86_64::structures::idt::InterruptStackFrame;

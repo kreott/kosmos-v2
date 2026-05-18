@@ -22,10 +22,10 @@ pub mod serial;
 pub mod task;
 pub mod vga_buffer;
 pub mod filesystem;
+pub mod drivers;
 
 // misc
 pub fn init() {
-    println!("cursor init done, pos: row=0 col=0");
     gdt::init();
     interrupts::init_idt();
     unsafe { interrupts::PICS.lock().initialize() };

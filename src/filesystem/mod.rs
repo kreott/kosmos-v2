@@ -2,9 +2,10 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::collections::BTreeMap;
 
-mod memfs;
+pub mod memfs;
+pub mod fat32;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum FsError {
     NotFound,
     NotADirectory,

@@ -1,10 +1,11 @@
 use crate::hlt_loop;
-use crate::{gdt, println};
+use crate::gdt;
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin;
 use x86_64::structures::idt::PageFaultErrorCode;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
+use crate::macros::*;
 
 // IDT, InterruptDescriptorTable
 lazy_static! {
@@ -15,6 +16,7 @@ lazy_static! {
         idt.general_protection_fault.set_handler_fn(general_protection_fault_handler);
         idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_interrupt_handler);
         idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_interrupt_handler);
+        idt[InterruptIndex::Syscall.as_usize()].set_handler_fn(syscall_interrupt_handler);
         unsafe {
             idt.double_fault
                 .set_handler_fn(double_fault_handler)
@@ -39,6 +41,7 @@ pub static PICS: spin::Mutex<ChainedPics> =
 pub enum InterruptIndex {
     Timer = PIC_1_OFFSET,
     Keyboard,
+    Syscall = 0x80,
 }
 
 impl InterruptIndex {
@@ -65,7 +68,6 @@ extern "x86-interrupt" fn double_fault_handler(
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
     
-
     unsafe {
         PICS.lock()
             .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
@@ -103,6 +105,43 @@ extern "x86-interrupt" fn general_protection_fault_handler(
     error_code: u64,
 ) {
     panic!("EXCEPTION: GENERAL PROTECTION FAULT\nerror code: {}\n{:#?}", error_code, stack_frame);
+}
+
+extern "x86-interrupt" fn syscall_interrupt_handler(
+    _stack_frame: InterruptStackFrame,
+) {
+    use crate::syscall::dispatch;
+    // read rax for syscall number, rdi/rsi for args
+    let number: u64;
+    let arg1: u64;
+    let arg2: u64;
+    let arg3: u64;
+    let arg4: u64;
+    let arg5: u64;
+    let arg6: u64;
+    unsafe {
+        core::arch::asm!(
+            "nop",
+            out("rax") number,
+            out("rdi") arg1,
+            out("rsi") arg2,
+            out("rdx") arg3,
+            out("r10") arg4,
+            out("r8")  arg5,
+            out("r9")  arg6,
+            options(nostack, nomem),
+        );
+    }
+
+    let ret = dispatch(number, arg1, arg2, arg3, arg4, arg5, arg6);
+
+    unsafe {
+        core::arch::asm!(
+            "nop",
+            in("rax") ret,
+            options(nostack, nomem),
+        );
+    }
 }
 
 // tests

@@ -1,3 +1,5 @@
+//! previously used for testing, obsolete
+
 use super::*;
 use alloc::string::String;
 use alloc::string::ToString;

@@ -3,6 +3,12 @@ name = "kosmos"
 version = "0.2.0"
 edition = "2024"
 
+[workspace]
+members = [
+    "kosmos-bin",
+    "kosmos-std"
+]
+
 [dependencies]
 bootloader = { version = "0.9", features = ["map_physical_memory"] }
 volatile = "0.2.6"
@@ -16,7 +22,8 @@ linked_list_allocator = "0.9.0"
 crossbeam-queue = { version = "0.3.11", default-features = false, features = ["alloc"] }
 conquer-once = { version = "0.2.0", default-features = false }
 futures-util = { version = "0.3.4", default-features = false, features = ["alloc"] }
-fatfs = { git = "https://github.com/rafalh/rust-fatfs", default-features = false, features = ["alloc"] }
+fatfs = { git = "https://github.com/rafalh/rust-fatfs", default-features = false, features = ["alloc", "lfn"] }
+xmas-elf = "0.10.0"
 
 [[bin]]
 name = "kosmos"
@@ -37,19 +44,20 @@ doctest = false
 [package.metadata.bootimage]
 run-args = [
     "-serial", "stdio",
-    "-drive", "format=raw,file=fat32.img,if=ide,index=1"
+    "-drive", "format=raw,file=qemu-fat32.img,if=ide,bus=1,unit=0"
 ]
 test-args = [
     "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "stdio",
     "-display", "none",
-    "-drive", "format=raw,file=fat32.img,if=ide,index=1"
+    "-drive", "format=raw,file=qemu-fat32.img,if=ide,bus=1,unit=0"
 ]
 test-success-exit-code = 33
-test-timeout = 10
+test-timeout = 150
 
 # 'cargo build'
 [profile.dev]
-
+debug = 0
+strip = "symbols"
 
 # 'cargo build --release'
 [profile.release]

@@ -1,3 +1,5 @@
+//! for previous testing, obsolete now with fat32 as replacement
+
 #![no_std]
 #![no_main]
 #![feature(custom_test_frameworks)]
@@ -9,7 +11,7 @@ extern crate alloc;
 use alloc::vec;
 use alloc::string::ToString;
 use core::panic::PanicInfo;
-use kosmos::filesystem::memfs::MemFs;
+use kosmos::fs::memfs::MemFs;
 use bootloader::{BootInfo, entry_point};
 
 entry_point!(main);

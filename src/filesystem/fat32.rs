@@ -1,68 +1,130 @@
-use alloc::vec::Vec;
-use fatfs::{FileSystem, FsOptions};
-use crate::macros::*;
+use crate::drivers::ata::{self, AtaDrive};
+use lazy_static::lazy_static;
+use spin::Mutex;
 
-static DISK_IMAGE: &[u8] = include_bytes!("../../fat32.img");
-
-pub struct MemDisk {
-    data: Vec<u8>,
-    pos: usize,
+pub trait DiskBackend {
+    fn read_sector(&mut self, lba: u32, buf: &mut [u8; 512]);
+    fn write_sector(&mut self, lba: u32, buf: &[u8; 512]);
 }
 
-impl MemDisk {
-    pub fn new(data: Vec<u8>) -> Self {
-        Self {
-            data,
-            pos: 0,
-        }
+pub struct Disk<B: DiskBackend> {
+    backend: B,
+    pos: u64,
+}
+
+impl<B: DiskBackend> Disk<B> {
+    pub fn new(backend: B) -> Self {
+        Self { backend, pos: 0 }
     }
 }
 
-impl fatfs::IoBase for MemDisk {
+impl DiskBackend for AtaDrive {
+    fn read_sector(&mut self, lba: u32, buf: &mut [u8; 512]) {
+        self.read_sector(lba, buf);
+    }
+
+    fn write_sector(&mut self, lba: u32, buf: &[u8; 512]) {
+        self.write_sector(lba, buf);
+    }
+}
+
+impl DiskBackend for &mut AtaDrive {
+    fn read_sector(&mut self, lba: u32, buf: &mut [u8; 512]) {
+        AtaDrive::read_sector(self, lba, buf);
+    }
+
+    fn write_sector(&mut self, lba: u32, buf: &[u8; 512]) {
+        AtaDrive::write_sector(self, lba, buf);
+    }
+}
+
+/* 
+OBSOLETE
+
+impl DiskBackend for Vec<u8> {
+    fn read_sector(&mut self, lba: u32, buf: &mut [u8; 512]) {
+        let offset = lba as usize * 512;
+        buf.copy_from_slice(&self[offset..offset + 512]);
+    }
+
+}
+*/
+
+impl<B: DiskBackend> fatfs::IoBase for Disk<B> {
     type Error = ();
 }
 
-impl fatfs::Read for MemDisk {
+impl<B: DiskBackend> fatfs::Read for Disk<B> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
-        let len = buf.len().min(self.data.len() - self.pos);
-        buf[..len].copy_from_slice(&self.data[self.pos..self.pos + len]);
-        self.pos += len;
+        let mut sector = [0u8; 512];
+        let lba = (self.pos / 512) as u32;
+        let offset = (self.pos % 512) as usize;
+        self.backend.read_sector(lba, &mut sector);
+        let len = buf.len().min(512 - offset);
+        buf[..len].copy_from_slice(&sector[offset..offset + len]);
+        self.pos += len as u64;
         Ok(len)
     }
 }
 
-impl fatfs::Seek for MemDisk {
+impl<B: DiskBackend> fatfs::Seek for Disk<B> {
     fn seek(&mut self, pos: fatfs::SeekFrom) -> Result<u64, Self::Error> {
         self.pos = match pos {
-            fatfs::SeekFrom::Start(n) => n as usize,
-            fatfs::SeekFrom::End(n) => (self.data.len() as i64 + n) as usize,
-            fatfs::SeekFrom::Current(n) => (self.pos as i64 + n) as usize,
+            fatfs::SeekFrom::Start(n) => n,
+            fatfs::SeekFrom::Current(n) => (self.pos as i64 + n) as u64,
+            fatfs::SeekFrom::End(_) => unimplemented!(),
         };
-        Ok(self.pos as u64)
+        Ok(self.pos)
     }
 }
 
-impl fatfs::Write for MemDisk {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-        let len = buf.len().min(self.data.len() - self.pos);
-        self.data[self.pos..self.pos + len].copy_from_slice(&buf[..len]);
-        self.pos += len;
+impl<B: DiskBackend> fatfs::Write for Disk<B> {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, ()> {
+        let mut sector = [0u8; 512];
+        let lba = (self.pos / 512) as u32;
+        let offset = (self.pos % 512) as usize;
+        
+        // read the existing sector
+        self.backend.read_sector(lba, &mut sector);
+        
+        // write the new data into it
+        let len = buf.len().min(512 - offset);
+        sector[offset..offset + len].copy_from_slice(&buf[..len]);
+        
+        // write it back
+        self.backend.write_sector(lba, &sector);
+        self.pos += len as u64;
         Ok(len)
     }
 
-    fn flush(&mut self) -> Result<(), Self::Error> {
+    fn flush(&mut self) -> Result<(), ()> {
         Ok(())
     }
 }
 
-pub fn test_fat32() {
-    let disk = MemDisk::new(DISK_IMAGE.to_vec());
-    serial_println!("disk size: {}", disk.data.len());
-    serial_println!("first bytes: {:x} {:x} {:x} {:x}", disk.data[0], disk.data[1], disk.data[2], disk.data[3]);
-    let fs = FileSystem::new(disk, FsOptions::new()).unwrap();
-    let root = fs.root_dir();
-    for entry in root.iter() {
-        let entry = entry.unwrap();
-        serial_println!("{}", entry.file_name());
+// public interface
+lazy_static! {
+    static ref FILESYSTEM: Mutex<Option<fatfs::FileSystem<Disk<&'static mut AtaDrive>>>> = Mutex::new(None);
+}
+
+pub fn init_fs() {
+    let mut drive_guard = ata::ATA_DRIVE.lock();
+    if let Some(drive) = drive_guard.as_mut() {
+        // never drop the drive while fs is alive
+        let drive_ref: &'static mut AtaDrive = unsafe { &mut *(drive as *mut AtaDrive) };
+        let disk = Disk::new(drive_ref);
+        let fs = fatfs::FileSystem::new(disk, fatfs::FsOptions::new()).unwrap();
+        *FILESYSTEM.lock() = Some(fs);
+    }
+}
+
+/// Sets up a filesystem for usage
+pub fn with_fs<F>(func: F)
+where
+    F: FnOnce(&fatfs::FileSystem<Disk<&'static mut AtaDrive>>)
+{
+    let guard = FILESYSTEM.lock();
+    if let Some(fs) = guard.as_ref() {
+        func(fs);
     }
 }

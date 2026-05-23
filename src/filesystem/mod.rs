@@ -1,9 +1,13 @@
+pub mod fat32;
+pub mod file_descriptor;
+
+/*
+OBSOLETE
+
 use alloc::string::String;
 use alloc::vec::Vec;
-use alloc::collections::BTreeMap;
 
-pub mod memfs;
-pub mod fat32;
+pub mod memfs; for testing, obsolete
 
 #[derive(Debug, PartialEq)]
 pub enum FsError {
@@ -26,3 +30,4 @@ pub trait FileSystem {
     fn exists(&self, path: &str) -> bool;
     fn is_dir(&self, path: &str) -> bool;
 }
+*/

@@ -1,0 +1,27 @@
+[package]
+name = "kosmos-bin"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+kosmos-std = { path = "../kosmos-std" }
+
+[[bin]]
+name = "cat"
+path = "src/cat.rs"
+
+[[bin]]
+name = "mkdir"
+path = "src/mkdir.rs"
+
+[[bin]]
+name = "rmdir"
+path = "src/rmdir.rs"
+
+[[bin]]
+name = "rm"
+path = "src/rm.rs"
+
+[[bin]]
+name = "ls"
+path = "src/ls.rs"

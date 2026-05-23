@@ -6,6 +6,8 @@
 
 extern crate alloc;
 
+use kosmos::filesystem::fat32::Disk;
+use kosmos::drivers::ata::{AtaDrive, AtaBus, AtaUnit};
 use kosmos::macros::*;
 use core::panic::PanicInfo;
 use bootloader::{BootInfo, entry_point};
@@ -33,14 +35,14 @@ fn panic(info: &PanicInfo) -> ! {
 }
 
 #[test_case]
-fn test_ata_read() {
-    serial_println!("starting ata test");
-    let mut drive = kosmos::drivers::ata::AtaDrive::new();
-    serial_println!("drive created");
-    let mut buf = [0u8; 512];
-    serial_println!("testing port");
-    drive.test_port();
-    serial_println!("reading sector");
-    drive.read_sector(0, &mut buf);
-    serial_println!("first bytes: {:x} {:x} {:x} {:x}", buf[0], buf[1], buf[2], buf[3]);
+pub fn test_ata_fat32() {
+    serial_println!("test start");
+    let mut drive = AtaDrive::new_with(AtaBus::Secondary, AtaUnit::Master);
+    serial_println!("detected: {}", drive.detect());
+    let disk = Disk::new(drive);
+    let fs = fatfs::FileSystem::new(disk, fatfs::FsOptions::new()).unwrap();
+    let root = fs.root_dir();
+    for entry in root.iter() {
+        serial_println!("{}", entry.unwrap().file_name());
+    }
 }

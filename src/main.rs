@@ -9,7 +9,7 @@ extern crate alloc;
 use bootloader::{BootInfo, entry_point};
 use kosmos::task::shell::shell_task;
 use core::panic::PanicInfo;
-use kosmos::{filesystem, macros::*};
+use kosmos::macros::*;
 use kosmos::task::Task;
 use kosmos::{allocator, task::executor::Executor};
 
@@ -30,8 +30,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
+    memory::init_globals(mapper, frame_allocator);
 
-    filesystem::fat32::test_fat32();
 
     #[cfg(test)]
     {

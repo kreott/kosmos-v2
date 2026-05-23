@@ -3,6 +3,19 @@ use x86_64::{
     PhysAddr, VirtAddr,
     structures::paging::{FrameAllocator, OffsetPageTable, PageTable, PhysFrame, Size4KiB},
 };
+use spin::Mutex;
+use lazy_static::lazy_static;
+
+// public interface
+lazy_static! {
+    pub static ref MAPPER: Mutex<Option<OffsetPageTable<'static>>> = Mutex::new(None);
+    pub static ref FRAME_ALLOCATOR: Mutex<Option<BootInfoFrameAllocator>> = Mutex::new(None);
+}
+
+pub fn init_globals(mapper: OffsetPageTable<'static>, frame_allocator: BootInfoFrameAllocator) {
+    *MAPPER.lock() = Some(mapper);
+    *FRAME_ALLOCATOR.lock() = Some(frame_allocator);
+}
 
 /// Initialize a new OffsetPageTable.
 ///

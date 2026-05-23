@@ -23,11 +23,15 @@ pub mod task;
 pub mod vga_buffer;
 pub mod filesystem;
 pub mod drivers;
+pub mod syscall;
+pub mod loader;
 
 // misc
 pub fn init() {
     gdt::init();
     interrupts::init_idt();
+    drivers::ata::init();
+    filesystem::fat32::init_fs();
     unsafe { interrupts::PICS.lock().initialize() };
     x86_64::instructions::interrupts::enable();
 }

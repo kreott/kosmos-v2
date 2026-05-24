@@ -10,7 +10,7 @@ use core::sync::atomic::Ordering;
 use crate::syscall::PROCESS_EXITED;
 
 
-pub fn load_and_run(path: &str) -> bool {
+pub fn load_and_run(path: &str, args: &[&str]) -> bool {
     serial_println!("loader: reading {}", path);
     let data = match read_file(path) {
         Some(d) => d,
@@ -55,11 +55,9 @@ pub fn load_and_run(path: &str) -> bool {
     }
 
     // jump to elf entry point
-    let entry: unsafe extern "C" fn() = unsafe {
-        core::mem::transmute(elf.header.pt2.entry_point() as *const ())
-    };
-    PROCESS_EXITED.store(false, Ordering::SeqCst);
-    unsafe { entry(); }
+    let entry_point = elf.header.pt2.entry_point();
+    let stack_top = allocate_user_stack();
+    serial_println!("loader: jumping to userspace entry {:#x}", entry_point);
     true
 }
 
@@ -81,6 +79,27 @@ fn read_file(path: &str) -> Option<Vec<u8>> {
         }
     });
     if found { Some(data) } else { None }
+}
+
+fn jump_to_userspace(entry: u64, stack_top: u64) -> ! {
+    let user_cs = crate::gdt::GDT.1.user_code_selector.0 as u64;
+    let user_ss = crate::gdt::GDT.1.user_data_selector.0 as u64;
+
+    unsafe {
+        core::arch::asm!(
+            "push {ss}",       // ss
+            "push {rsp}",      // rsp
+            "push 0x200",      // rflags: interrupts enabled
+            "push {cs}",       // cs
+            "push {rip}",      // rip = entry point
+            "iretq",
+            ss  = in(reg) user_ss,
+            rsp = in(reg) stack_top,
+            cs  = in(reg) user_cs,
+            rip = in(reg) entry,
+            options(noreturn)
+        );
+    }
 }
 
 fn map_segment(virtaddr: u64, size: u64) {
@@ -106,4 +125,34 @@ fn map_segment(virtaddr: u64, size: u64) {
             }
         }
     }
+}
+
+fn allocate_user_stack() -> VirtAddr {
+    const STACK_SIZE: usize = 4096 * 8; // 32kb
+    const STACK_TOP: u64 = 0x0000_7FFF_FFFF_0000; // high userspace address
+
+    let mut mapper = MAPPER.lock();
+    let mut frame_allocator = FRAME_ALLOCATOR.lock();
+    let mapper = mapper.as_mut().unwrap();
+    let frame_allocator = frame_allocator.as_mut().unwrap();
+
+    let stack_start = VirtAddr::new(STACK_TOP - STACK_SIZE as u64);
+    let stack_end = VirtAddr::new(STACK_TOP);
+
+    let start_page = Page::<Size4KiB>::containing_address(stack_start);
+    let end_page = Page::<Size4KiB>::containing_address(stack_end - 1u64);
+
+    for page in Page::range_inclusive(start_page, end_page) {
+        let frame = frame_allocator.allocate_frame().expect("out of frames");
+        let flags = PageTableFlags::PRESENT
+            | PageTableFlags::WRITABLE
+            | PageTableFlags::USER_ACCESSIBLE; // ← critical
+        unsafe {
+            mapper.map_to(page, frame, flags, frame_allocator)
+                .expect("stack map failed")
+                .flush();
+        }
+    }
+
+    stack_end // stack grows down, so top is the initial rsp
 }

@@ -1,0 +1,2 @@
+[target.x86_64-kosmos]
+rustflags = ["-C", "link-arg=-T../link.ld"]

@@ -30,6 +30,7 @@ pub mod loader;
 pub fn init() {
     gdt::init();
     interrupts::init_idt();
+    interrupts::init_syscall();
     drivers::ata::init();
     filesystem::fat32::init_fs();
     unsafe { interrupts::PICS.lock().initialize() };

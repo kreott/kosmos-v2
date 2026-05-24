@@ -6,6 +6,11 @@ use spin;
 use x86_64::structures::idt::PageFaultErrorCode;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
 use crate::macros::*;
+use crate::gdt::GDT;
+use x86_64::registers::model_specific::{Efer, EferFlags, LStar, Star, SFMask};
+use x86_64::registers::rflags::RFlags;
+
+
 
 // IDT, InterruptDescriptorTable
 lazy_static! {
@@ -16,8 +21,8 @@ lazy_static! {
         idt.general_protection_fault.set_handler_fn(general_protection_fault_handler);
         idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_interrupt_handler);
         idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_interrupt_handler);
-        idt[InterruptIndex::Syscall.as_usize()].set_handler_fn(syscall_interrupt_handler);
         unsafe {
+            idt[InterruptIndex::Syscall.as_usize()].set_handler_addr(x86_64::VirtAddr::new(syscall_interrupt_handler as *const () as u64));
             idt.double_fault
                 .set_handler_fn(double_fault_handler)
                 .set_stack_index(gdt::DOUBLE_FAULT_IST_INDEX);
@@ -51,6 +56,28 @@ impl InterruptIndex {
 
     fn as_usize(self) -> usize {
         usize::from(self.as_u8())
+    }
+}
+
+
+pub fn init_syscall() {
+    unsafe {
+        Efer::update(|f| *f |= EferFlags::SYSTEM_CALL_EXTENSIONS);
+
+        LStar::write(x86_64::VirtAddr::new(
+            syscall_interrupt_handler as *const () as u64,
+        ));
+
+        Star::write(
+            GDT.1.user_code_selector,
+            GDT.1.user_data_selector,
+            GDT.1.code_selector,
+            GDT.1.data_selector,
+        ).unwrap();
+
+        // Mask interrupts + trap flag during syscall handler
+        // Without this, an IRQ can fire before you've saved rcx/r11
+        SFMask::write(RFlags::INTERRUPT_FLAG | RFlags::TRAP_FLAG);
     }
 }
 
@@ -107,41 +134,49 @@ extern "x86-interrupt" fn general_protection_fault_handler(
     panic!("EXCEPTION: GENERAL PROTECTION FAULT\nerror code: {}\n{:#?}", error_code, stack_frame);
 }
 
-extern "x86-interrupt" fn syscall_interrupt_handler(
-    _stack_frame: InterruptStackFrame,
-) {
-    use crate::syscall::dispatch;
-    // read rax for syscall number, rdi/rsi for args
-    let number: u64;
-    let arg1: u64;
-    let arg2: u64;
-    let arg3: u64;
-    let arg4: u64;
-    let arg5: u64;
-    let arg6: u64;
-    unsafe {
-        core::arch::asm!(
-            "nop",
-            out("rax") number,
-            out("rdi") arg1,
-            out("rsi") arg2,
-            out("rdx") arg3,
-            out("r10") arg4,
-            out("r8")  arg5,
-            out("r9")  arg6,
-            options(nostack, nomem),
-        );
-    }
+#[unsafe(naked)]
+unsafe extern "C" fn syscall_interrupt_handler() {
+    core::arch::naked_asm!(
+        // rax = syscall number, rdi/rsi/rdx/r10/r8/r9 = args
+        "push rcx",     // save return address (rcx clobbered by syscall)
+        "push r11",     // save rflags     (r11 clobbered by syscall)
+        // callee-saved registers
+        "push rbp",
+        "push rbx",
+        "push r12",
+        "push r13",
+        "push r14",
+        "push r15",
 
-    let ret = dispatch(number, arg1, arg2, arg3, arg4, arg5, arg6);
+        // Fix up args to match extern "C" calling convention:
+        // dispatch(number, arg1, arg2, arg3, arg4, arg5)
+        //          rdi     rsi   rdx   rcx   r8    r9
+        // Currently: rax=number, rdi=arg1, rsi=arg2, rdx=arg3, r10=arg4, r8=arg5
+        "mov r9,  r8",   // arg5: r8  → r9
+        "mov r8,  r10",  // arg4: r10 → r8
+        "mov rcx, rdx",  // arg3: rdx → rcx
+        "mov rdx, rsi",  // arg2: rsi → rdx
+        "mov rsi, rdi",  // arg1: rdi → rsi
+        "mov rdi, rax",  // number: rax → rdi  ← this was missing!
 
-    unsafe {
-        core::arch::asm!(
-            "nop",
-            in("rax") ret,
-            options(nostack, nomem),
-        );
-    }
+        "call {dispatch}",
+
+        // rax now holds return value — preserve it across pops
+        "pop r15",
+        "pop r14",
+        "pop r13",
+        "pop r12",
+        "pop rbx",
+        "pop rbp",
+        "pop r11",      // restore rflags
+        "pop rcx",      // restore return address
+        "sysretq",
+        dispatch = sym dispatch_from_asm,
+    );
+}
+
+extern "C" fn dispatch_from_asm(number: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> u64 {
+    crate::syscall::dispatch(number, arg1, arg2, arg3, arg4, arg5, 0)
 }
 
 // tests

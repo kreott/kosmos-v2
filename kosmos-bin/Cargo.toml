@@ -25,3 +25,7 @@ path = "src/rm.rs"
 [[bin]]
 name = "ls"
 path = "src/ls.rs"
+
+[[bin]]
+name = "greet"
+path = "src/greet.rs"

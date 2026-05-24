@@ -1,4 +1,4 @@
-BINS = ls cat mkdir rmdir rm
+BINS = ls cat mkdir rmdir rm greet
 BIN_DIR = target/x86_64-kosmos/debug
 MNT = /tmp/mnt
 

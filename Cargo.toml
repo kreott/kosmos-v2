@@ -56,8 +56,7 @@ test-timeout = 150
 
 # 'cargo build'
 [profile.dev]
-debug = 0
-strip = "symbols"
+strip = "debuginfo"
 
 # 'cargo build --release'
 [profile.release]

@@ -163,9 +163,13 @@ impl Shell {
         }
     }
 
-    fn run_external(&mut self, cmd: &str, _args: &str) {
+    fn run_external(&mut self, cmd: &str, args: &str) {
         let path = alloc::format!("/usr/bin/{}", cmd);
-        if !crate::loader::load_and_run(&path) {
+
+        let mut argv: Vec<&str> = Vec::new();
+        argv.push(cmd);
+        argv.extend(args.split_whitespace());
+        if !crate::loader::load_and_run(&path, argv.as_slice()) {
             println!("{}: command not found", cmd);
         }
     }

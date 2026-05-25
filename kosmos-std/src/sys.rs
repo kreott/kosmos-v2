@@ -56,15 +56,13 @@ pub fn open(path: &str) -> u64 {
     ret
 }
 
-pub fn exit(status: u64) {
+pub fn exit(status: u64) -> ! {
     unsafe {
         core::arch::asm!(
             "syscall",
             in("rax") 60u64,
             in("rdi") status,
-            out("rcx") _,
-            out("r11") _,
-            options(nostack),
+            options(nostack, noreturn),
         );
     }
 }

@@ -58,6 +58,7 @@ pub fn load_and_run(path: &str, args: &[&str]) -> bool {
     let entry_point = elf.header.pt2.entry_point();
     let stack_top = allocate_user_stack();
     serial_println!("loader: jumping to userspace entry {:#x}", entry_point);
+    jump_to_userspace(entry_point, stack_top.as_u64());
     true
 }
 
@@ -92,6 +93,8 @@ fn jump_to_userspace(entry: u64, stack_top: u64) -> ! {
             "push 0x200",      // rflags: interrupts enabled
             "push {cs}",       // cs
             "push {rip}",      // rip = entry point
+            "xor edi, edi",
+            "xor esi, esi",
             "iretq",
             ss  = in(reg) user_ss,
             rsp = in(reg) stack_top,
@@ -113,7 +116,10 @@ fn map_segment(virtaddr: u64, size: u64) {
 
     for page in Page::range_inclusive(start, end) {
         let frame = frame_allocator.allocate_frame().expect("out of frames");
-        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+        let flags = PageTableFlags::PRESENT 
+            | PageTableFlags::WRITABLE
+            | PageTableFlags::USER_ACCESSIBLE;
+                                    
         unsafe {
             match mapper.map_to(page, frame, flags, frame_allocator) {
                 Ok(flusher) => { flusher.flush() }
@@ -128,8 +134,8 @@ fn map_segment(virtaddr: u64, size: u64) {
 }
 
 fn allocate_user_stack() -> VirtAddr {
-    const STACK_SIZE: usize = 4096 * 8; // 32kb
-    const STACK_TOP: u64 = 0x0000_7FFF_FFFF_0000; // high userspace address
+    const STACK_SIZE: usize = 4096 * 32;
+    const STACK_TOP: u64 = 0x0000_7FFF_FF00_0000;
 
     let mut mapper = MAPPER.lock();
     let mut frame_allocator = FRAME_ALLOCATOR.lock();
@@ -146,13 +152,38 @@ fn allocate_user_stack() -> VirtAddr {
         let frame = frame_allocator.allocate_frame().expect("out of frames");
         let flags = PageTableFlags::PRESENT
             | PageTableFlags::WRITABLE
-            | PageTableFlags::USER_ACCESSIBLE; // ← critical
+            | PageTableFlags::USER_ACCESSIBLE;
         unsafe {
-            mapper.map_to(page, frame, flags, frame_allocator)
-                .expect("stack map failed")
-                .flush();
+            match mapper.map_to(page, frame, flags, frame_allocator) {
+                Ok(flusher) => { flusher.flush(); }
+                Err(MapToError::PageAlreadyMapped(_)) => {
+                    // already mapped from previous run, just update flags
+                    mapper.update_flags(page, flags).unwrap().flush();
+                }
+                Err(e) => panic!("stack map failed: {:?}", e),
+            }
         }
     }
 
-    stack_end // stack grows down, so top is the initial rsp
+    VirtAddr::new(STACK_TOP - 16)
+}
+
+fn push_args_to_stack(stack_top: VirtAddr, args: &[&str]) -> (u64, u64, u64) {
+-   let mut sp = stack_top.as_u64();
+
+    // write string bytes onto stack
+    let mut str_ptrs = Vec::new();
+    for arg in args.iter() {
+        let bytes = arg.as_bytes();
+        sp -= bytes.len() as u64;
+        sp &= !0xF;
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                sp as *mut u8,
+                bytes.len()
+            );
+        }
+        str_ptrs.push((sp, bytes.len() as u64));
+    }
 }

@@ -5,18 +5,28 @@ use kosmos_std::prelude::*;
 use kosmos_std::sys;
 
 #[unsafe(no_mangle)]
-pub extern "C" fn _start(argc: usize, argv: *const &str) {
-    let args = unsafe { core::slice::from_raw_parts(argv, argc) };
-    let path = if argc > 1 { args[1] } else { "/" };
-
+pub extern "C" fn _start(argc: usize, argv: *const &str) -> ! {
+    sys::write(1, b"ls: start\n");
+    let path = if argc > 1 {
+        let args = unsafe { core::slice::from_raw_parts(argv, argc) };
+        args[1]
+    } else {
+        "/"
+    };
+    
+    sys::write(1, b"ls: opening path\n");
     let fd = sys::open(path);
+    sys::write(1, b"ls: got fd\n");
+    
     if fd == u64::MAX {
         sys::write(2, b"ls: cannot open directory\n");
         sys::exit(1);
     }
 
     let mut buf = [0u8; 4096];
+    sys::write(1, b"ls: calling getdents\n");
     let n = sys::getdents64(fd, &mut buf) as usize;
+    sys::write(1, b"ls: got entries\n");
 
     let mut offset = 0;
     while offset < n {
@@ -37,8 +47,8 @@ pub extern "C" fn _start(argc: usize, argv: *const &str) {
 }
 
 #[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! {
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    sys::write(1, info.message().as_str().unwrap().as_bytes());
     sys::write(1, b"panicked");
     sys::exit(1);
-    loop {}
 }

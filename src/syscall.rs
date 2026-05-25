@@ -76,9 +76,13 @@ use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 pub static PROCESS_EXITED: AtomicBool = AtomicBool::new(false);
 
-fn sys_exit(_status: u64) -> u64 {
+fn sys_exit(status: u64) -> u64 {
     PROCESS_EXITED.store(true, Ordering::SeqCst);
-    0
+    serial_println!("process exited with status {}", status);
+    // temporary solution to loop
+    loop {
+        x86_64::instructions::hlt();
+    }
 }
 
 fn sys_getdents64(fd: u64, buf_ptr: u64, count: u64) -> u64 {

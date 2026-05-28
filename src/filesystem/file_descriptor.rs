@@ -31,24 +31,32 @@ pub fn open(path: &str) -> Option<u64> {
     let mut success = false;
 
     crate::filesystem::fat32::with_fs(|fs| {
-        // try as file first
-        match fs.root_dir().open_file(path.trim_start_matches('/')) {
-            Ok(mut file) => {
-                let mut buf = [0u8; 512];
-                loop {
-                    let n = fatfs::Read::read(&mut file, &mut buf).unwrap();
-                    if n == 0 { break; }
-                    data.extend_from_slice(&buf[..n]);
-                }
-                success = true;
-            }
-            Err(_) => {
-                // try as dir
-                if fs.root_dir().open_dir(path.trim_start_matches('/')).is_ok() {
-                    is_dir = true;
+        let trimmed = path.trim_start_matches('/');
+        
+        // try as file
+        if !trimmed.is_empty() {
+            match fs.root_dir().open_file(trimmed) {
+                Ok(mut file) => {
+                    let mut buf = [0u8; 512];
+                    loop {
+                        let n = fatfs::Read::read(&mut file, &mut buf).unwrap();
+                        if n == 0 { break; }
+                        data.extend_from_slice(&buf[..n]);
+                    }
                     success = true;
+                    return;
                 }
+                Err(_) => {}
             }
+        }
+
+        // try as dir
+        if trimmed.is_empty() {
+            is_dir = true;
+            success = true;
+        } else if fs.root_dir().open_dir(trimmed).is_ok() {
+            is_dir = true;
+            success = true;
         }
     });
 

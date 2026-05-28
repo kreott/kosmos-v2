@@ -10,8 +10,8 @@ pub extern "C" fn _start() {
 }
 
 #[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! {
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    sys::write(1, info.message().as_str().unwrap().as_bytes());
     sys::write(1, b"panicked");
     sys::exit(1);
-    loop {}
 }

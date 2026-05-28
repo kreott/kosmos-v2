@@ -1,5 +1,6 @@
 //! sys.rs: contains wrappers for syscalls
 
+// syscalls
 pub fn read(fd: u64, buf: &[u8]) -> u64 {
     let ret: u64;
     unsafe {

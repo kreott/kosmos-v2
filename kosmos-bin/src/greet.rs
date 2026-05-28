@@ -19,13 +19,6 @@ pub extern "C" fn _start(argc: usize, argv: *const &str) {
     sys::exit(0);
 }
 
-#[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! {
-    sys::write(1, b"panicked");
-    sys::exit(1);
-    loop {}
-}
-
 fn u64_to_buf(mut n: u64, buf: &mut [u8; 20]) -> &[u8] {
     let mut i = 20;
     if n == 0 {
@@ -38,4 +31,11 @@ fn u64_to_buf(mut n: u64, buf: &mut [u8; 20]) -> &[u8] {
         n /= 10;
     }
     &buf[i..]
+}
+
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    sys::write(1, info.message().as_str().unwrap().as_bytes());
+    sys::write(1, b"panicked");
+    sys::exit(1);
 }

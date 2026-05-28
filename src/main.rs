@@ -12,6 +12,7 @@ use core::panic::PanicInfo;
 use kosmos::macros::*;
 use kosmos::task::Task;
 use kosmos::{allocator, task::executor::Executor};
+use kosmos::syscall;
 
 entry_point!(kernel_main);
 
@@ -31,6 +32,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
     memory::init_globals(mapper, frame_allocator);
+    syscall::init_exit_stack();
 
 
     #[cfg(test)]

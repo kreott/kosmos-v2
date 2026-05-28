@@ -3,30 +3,32 @@
 
 use kosmos_std::prelude::*;
 use kosmos_std::sys;
+use kosmos_std::args::{Args, Help};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start(argc: usize, argv: *const &str) -> ! {
-    sys::write(1, b"ls: start\n");
-    let path = if argc > 1 {
-        let args = unsafe { core::slice::from_raw_parts(argv, argc) };
-        args[1]
-    } else {
-        "/"
-    };
+    let argv = kosmos_std::init_args(argc, argv);
+    let args = Args::parse(argv);
+
+    if args.flag("h") || args.flag("help") {
+        Help::new("ls", "list directory contents")
+            .flag("a", "all",  "show hidden files")
+            .flag("l", "long", "long listing format")
+            .print();
+        sys::exit(0);
+    }
     
-    sys::write(1, b"ls: opening path\n");
-    let fd = sys::open(path);
-    sys::write(1, b"ls: got fd\n");
-    
+    let show_all = args.flag("a") || args.flag("all");
+    let path = args.positional(0, "/");
+
+    let fd = sys::open(path.as_str());    
     if fd == u64::MAX {
-        sys::write(2, b"ls: cannot open directory\n");
+        sys::write(2, b"ls: could not open directory\n");
         sys::exit(1);
     }
 
     let mut buf = [0u8; 4096];
-    sys::write(1, b"ls: calling getdents\n");
     let n = sys::getdents64(fd, &mut buf) as usize;
-    sys::write(1, b"ls: got entries\n");
 
     let mut offset = 0;
     while offset < n {
@@ -38,11 +40,17 @@ pub extern "C" fn _start(argc: usize, argv: *const &str) -> ! {
         let mut name_len = 0;
         while buf[name_start + name_len] != 0 { name_len += 1; }
         let name = core::str::from_utf8(&buf[name_start..name_start + name_len]).unwrap_or("?");
-        sys::write(1, name.as_bytes());
-        sys::write(1, b"\n");
+
+        if !show_all && name.starts_with(".") {
+            offset += reclen;
+            continue;
+        }
+
+        vga_print!("{}  ", name);
         offset += reclen;
     }
 
+    vga_print!("\n");
     sys::exit(0);
 }
 

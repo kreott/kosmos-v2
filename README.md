@@ -1,5 +1,5 @@
 # Kosmos
-Tiny passion project that started as just following along Philipp Opperman's (Writing an OS in Rust)[https://os.phil-opp.com/] blog!
+Tiny passion project that started as just following along Philipp Opperman's [Writing an OS in Rust](https://os.phil-opp.com/) blog!
 If you are interested in OS development I highly suggest you check it out, it's amazing.
 
 Currently only supports legacy BIOS and not UEFI, but runnable in SeaBIOS on UEFI hardware possibly idk i havent tried that yet
